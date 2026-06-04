@@ -1,14 +1,29 @@
 import platform
 
 import matplotlib.pyplot as plt
+from matplotlib import font_manager
 
 
-if platform.system() == "Windows":
-    plt.rcParams["font.family"] = "Malgun Gothic"
-elif platform.system() == "Darwin":
-    plt.rcParams["font.family"] = "AppleGothic"
-else:
-    plt.rcParams["font.family"] = "NanumGothic"
+def configure_korean_font() -> None:
+    preferred_fonts = {
+        "Windows": ["Malgun Gothic"],
+        "Darwin": ["AppleGothic"],
+        "Linux": ["NanumGothic", "NanumBarunGothic", "Noto Sans CJK KR", "Noto Sans KR"],
+    }
+    installed_fonts = {font.name for font in font_manager.fontManager.ttflist}
+    candidates = preferred_fonts.get(platform.system(), []) + [
+        "NanumGothic",
+        "Noto Sans CJK KR",
+        "Noto Sans KR",
+    ]
+
+    for font_name in candidates:
+        if font_name in installed_fonts:
+            plt.rcParams["font.family"] = font_name
+            break
+
+
+configure_korean_font()
 plt.rcParams["axes.unicode_minus"] = False
 
 
