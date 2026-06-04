@@ -5,6 +5,7 @@ import streamlit as st
 
 from modules.data_fetcher import get_recent_data
 from modules.predictor import QuantPredictor
+from utils.data_utils import safe_filename, save_output_csv
 from visualization import plot_price_history, plot_sentiment_index
 
 
@@ -38,7 +39,9 @@ def load_input_data(asset_name: str):
         return cached
 
     df = get_recent_data(asset_name)
+    output_path = save_output_csv(df, f"{safe_filename(asset_name)}_raw_indicators.csv")
     st.session_state.raw_data = df
+    st.session_state.raw_data_output_path = str(output_path)
     return df
 
 
@@ -64,17 +67,28 @@ def run() -> None:
     )
 
     asset_name = st.session_state.get("asset_name", "삼성전자")
+    asset_key = safe_filename(asset_name)
 
     if st.button("저장된 모델로 예측 실행", type="primary"):
         with st.spinner(f"{asset_name} 최근 데이터를 준비하고 Model {model_choice}로 예측하는 중입니다."):
             predictor = load_predictor()
             raw_data = load_input_data(asset_name)
-            st.session_state.prediction_result = predictor.get_prediction(
-                asset_name,
-                raw_data,
-                model_type=model_choice,
+            result = predictor.get_prediction(asset_name, raw_data, model_type=model_choice)
+
+            timeseries_path = save_output_csv(
+                result["df_plot"],
+                f"{asset_key}_model_{model_choice}_prediction_timeseries.csv",
             )
+            input_path = save_output_csv(
+                pd.DataFrame([result["current_data"]]),
+                f"{asset_key}_model_{model_choice}_prediction_input.csv",
+                index=False,
+            )
+
+            st.session_state.prediction_result = result
             st.session_state.prediction_model_choice = model_choice
+            st.session_state.prediction_plot_output_path = str(timeseries_path)
+            st.session_state.prediction_input_output_path = str(input_path)
 
     result = st.session_state.get("prediction_result")
     selected_model = st.session_state.get("prediction_model_choice", model_choice)
@@ -98,4 +112,8 @@ def run() -> None:
         st.pyplot(plot_sentiment_index(df_plot["Investor_Sentiment_PC1"], title="투자자 심리지수 PC1"))
 
     st.subheader("최근 예측 입력값")
-    st.dataframe(pd.DataFrame([result["current_data"]]), width='stretch')
+    st.dataframe(pd.DataFrame([result["current_data"]]), width="stretch")
+    if st.session_state.get("prediction_input_output_path"):
+        st.caption(f"예측 입력 CSV 저장 위치: {st.session_state.prediction_input_output_path}")
+    if st.session_state.get("prediction_plot_output_path"):
+        st.caption(f"예측 시계열 CSV 저장 위치: {st.session_state.prediction_plot_output_path}")

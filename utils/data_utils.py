@@ -3,14 +3,30 @@ from pathlib import Path
 import pandas as pd
 
 
+OUTPUT_DIR = Path("data/output")
+
+
 def load_csv(path: str | Path, **kwargs) -> pd.DataFrame:
     return pd.read_csv(path, **kwargs)
 
 
-def save_csv(df: pd.DataFrame, path: str | Path, **kwargs) -> None:
+def save_csv(df: pd.DataFrame, path: str | Path, **kwargs) -> Path:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(target, index=False, **kwargs)
+    df.to_csv(target, **kwargs)
+    return target
+
+
+def save_output_csv(df: pd.DataFrame, filename: str, **kwargs) -> Path:
+    data = df.copy()
+    if data.index.name is None:
+        data.index.name = "Date"
+    return save_csv(data, OUTPUT_DIR / filename, **kwargs)
+
+
+def safe_filename(value: str) -> str:
+    safe = "".join(char if char.isalnum() else "_" for char in value)
+    return safe.strip("_") or "output"
 
 
 def validate_columns(df: pd.DataFrame, required_columns: list[str]) -> None:

@@ -4,6 +4,7 @@ from sklearn.decomposition import PCA
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import StandardScaler
 
+from utils.data_utils import safe_filename, save_output_csv
 from visualization import plot_correlation_heatmap, plot_sentiment_index
 
 
@@ -57,8 +58,14 @@ def run() -> None:
         with st.spinner("가격 요인을 통제한 잔차와 PCA 심리지수를 계산하는 중입니다."):
             residual_data = extract_sentiment_residuals(raw_data)
             sentiment_data, explained_variance = create_sentiment_index(residual_data)
+            asset_name = st.session_state.get("asset_name", "asset")
+            output_path = save_output_csv(
+                sentiment_data,
+                f"{safe_filename(asset_name)}_sentiment_features.csv",
+            )
             st.session_state.sentiment_data = sentiment_data
             st.session_state.explained_variance = explained_variance
+            st.session_state.sentiment_data_output_path = str(output_path)
 
     df = st.session_state.get("sentiment_data")
     if df is None:
@@ -67,8 +74,10 @@ def run() -> None:
 
     st.metric("PC1 설명분산", f"{st.session_state.explained_variance:.1%}")
 
-    st.subheader("심리지수 데이터")
-    st.dataframe(df[RESIDUAL_COLUMNS + ["Investor_Sentiment_PC1"]].tail(20), width='stretch')
+    st.subheader("심리지표 데이터")
+    st.dataframe(df[RESIDUAL_COLUMNS + ["Investor_Sentiment_PC1"]].tail(20), width="stretch")
+    if st.session_state.get("sentiment_data_output_path"):
+        st.caption(f"CSV 저장 위치: {st.session_state.sentiment_data_output_path}")
 
     col1, col2 = st.columns(2)
     with col1:
