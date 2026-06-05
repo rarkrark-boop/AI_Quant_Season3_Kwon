@@ -218,8 +218,8 @@ def render_experiment_summary() -> None:
     st.subheader("실험 구조")
     target_col, exog_col = st.columns(2)
     target_col.metric("Target", "삼성전자")
-    exog_col.metric("Exogenous Inputs", "KOSPI + Bitcoin")
-    st.caption("외생 입력은 방향성 예측을 보조하는 학습 자료이며, 지표 해석의 중심은 삼성전자 심리 proxy입니다.")
+    exog_col.metric("시장학습 보조자료", "KOSPI + Bitcoin")
+    st.caption("시장학습 보조자료는 방향성 예측을 보조하는 학습 자료이며, 지표 해석의 중심은 삼성전자 심리 proxy입니다.")
 
     comparison_df = pd.DataFrame(
         [
@@ -242,7 +242,7 @@ def render_experiment_summary() -> None:
                 "기본 학습 데이터": "삼성전자 + KOSPI + Bitcoin 주봉 종가/수익률 lag",
                 "심리 proxy": "사용하지 않음",
                 "백테스트 DA": f"{BACKTEST_DA['Price-only']:.2f}%",
-                "해석": "외생 입력 포함 가격 기반 모델",
+                "해석": "시장학습 보조자료 포함 가격 기반 모델",
             },
             {
                 "Model": "Model A",
@@ -302,7 +302,7 @@ def render_experiment_summary() -> None:
 
 def run() -> None:
     st.header("모델 구축 및 검증")
-    st.caption("최종 예측 대상은 삼성전자이며, 코스피와 비트코인은 외생 보조 입력으로 사용합니다.")
+    st.caption("최종 예측 대상은 삼성전자이며, 코스피와 비트코인은 시장학습 보조자료로 사용합니다.")
 
     missing = validate_model_files()
     if missing:
@@ -340,7 +340,7 @@ def run() -> None:
     asset_key = safe_filename(asset_name)
 
     if st.button("삼성전자 방향성 예측 실행", type="primary"):
-        with st.spinner(f"삼성전자 타깃 데이터와 KOSPI/BTC 외생변수를 준비하고 Model {model_choice}로 예측하는 중입니다."):
+        with st.spinner(f"삼성전자 타깃 데이터와 KOSPI/BTC 시장학습 보조자료를 준비하고 Model {model_choice}로 예측하는 중입니다."):
             predictor = load_predictor()
             result = predictor.get_prediction(model_type=model_choice)
 

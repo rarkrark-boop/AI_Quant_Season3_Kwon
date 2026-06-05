@@ -60,9 +60,9 @@ class QuantPredictor:
             result[f"{prefix}_Log_Return_lag{lag}"] = result[f"{prefix}_Log_Return"].shift(lag)
         return result
 
-    def _align_exogenous_to_target(self, target_df: pd.DataFrame, exog_df: pd.DataFrame, prefix: str) -> pd.DataFrame:
+    def _align_market_learning_to_target(self, target_df: pd.DataFrame, market_df: pd.DataFrame, prefix: str) -> pd.DataFrame:
         exog_features = [f"{prefix}_Close"] + [f"{prefix}_Log_Return_lag{i}" for i in range(1, N_LAGS + 1)]
-        return exog_df[exog_features].sort_index().reindex(target_df.index, method="ffill")
+        return market_df[exog_features].sort_index().reindex(target_df.index, method="ffill")
 
     def _build_live_feature_frame(self):
         samsung_raw = get_recent_data("삼성전자")
@@ -84,8 +84,8 @@ class QuantPredictor:
         features = pd.concat(
             [
                 samsung,
-                self._align_exogenous_to_target(samsung, kospi, "KOSPI"),
-                self._align_exogenous_to_target(samsung, bitcoin, "Bitcoin"),
+                self._align_market_learning_to_target(samsung, kospi, "KOSPI"),
+                self._align_market_learning_to_target(samsung, bitcoin, "Bitcoin"),
             ],
             axis=1,
         )

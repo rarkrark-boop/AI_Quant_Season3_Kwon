@@ -92,15 +92,15 @@ def add_return_lags(df: pd.DataFrame, prefix: str, n_lags: int = N_LAGS) -> pd.D
     return result
 
 
-def align_exogenous_to_target(target_df: pd.DataFrame, exog_df: pd.DataFrame, prefix: str) -> pd.DataFrame:
-    """Align exogenous weekly features to Samsung dates using the latest available prior week."""
+def align_market_learning_to_target(target_df: pd.DataFrame, market_df: pd.DataFrame, prefix: str) -> pd.DataFrame:
+    """Align market-learning weekly features to Samsung dates using the latest available prior week."""
     exog_features = [f"{prefix}_Close"] + [f"{prefix}_Log_Return_lag{i}" for i in range(1, N_LAGS + 1)]
-    aligned = exog_df[exog_features].sort_index().reindex(target_df.index, method="ffill")
+    aligned = market_df[exog_features].sort_index().reindex(target_df.index, method="ffill")
     return aligned
 
 
 def build_samsung_target_dataset(df_processed: pd.DataFrame) -> pd.DataFrame:
-    """Build one-row-per-Samsung-week training data with KOSPI/BTC as exogenous inputs."""
+    """Build one-row-per-Samsung-week training data with KOSPI/BTC as market-learning aids."""
     by_asset = {name: asset_df.sort_index().copy() for name, asset_df in df_processed.groupby("Ticker")}
     missing_assets = [asset for asset in [TARGET_ASSET] + EXOG_ASSETS if asset not in by_asset]
     if missing_assets:
@@ -113,7 +113,7 @@ def build_samsung_target_dataset(df_processed: pd.DataFrame) -> pd.DataFrame:
     feature_frames = [samsung]
     for asset_name, prefix in [("코스피", "KOSPI"), ("비트코인", "Bitcoin")]:
         exog = add_return_lags(by_asset[asset_name], prefix)
-        feature_frames.append(align_exogenous_to_target(samsung, exog, prefix))
+        feature_frames.append(align_market_learning_to_target(samsung, exog, prefix))
 
     df_model = pd.concat(feature_frames, axis=1)
     df_model = df_model.dropna().copy()
@@ -222,7 +222,7 @@ def print_feature_summary(price_features, residual_cols, pca_col):
     print(" - Samsung Target_Log_Return: Samsung Electronics next-week log return.")
     print("\nBase close/return features")
     print(f" - {price_features}")
-    print("   Reason: Samsung is the target asset; KOSPI and Bitcoin are exogenous market/risk-sentiment inputs.")
+    print("   Reason: Samsung is the target asset; KOSPI and Bitcoin are market-learning aids.")
     print("\nSentiment proxy features")
     print(f" - PCA index: {pca_col}")
     print("   Reason: tests whether one compressed Samsung sentiment proxy is useful.")
@@ -259,7 +259,7 @@ def main():
     df_processed = extract_sentiment_residuals(df_full)
 
     print("=========================================================")
-    print(" [3단계] 삼성전자 타깃 + KOSPI/BTC 외생변수 Feature Engineering")
+    print(" [3단계] 삼성전자 타깃 + KOSPI/BTC 시장학습 보조자료 Feature Engineering")
     print("=========================================================")
     df_final = build_samsung_target_dataset(df_processed)
     print(f"최종 학습 데이터: {len(df_final)}주 ({df_final.index[0].date()} ~ {df_final.index[-1].date()})")
