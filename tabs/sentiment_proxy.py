@@ -47,7 +47,8 @@ def create_sentiment_index(df: pd.DataFrame) -> tuple[pd.DataFrame, float]:
 
 
 def run() -> None:
-    st.header("심리지표 계산 및 처리")
+    st.header("삼성전자 심리 Proxy 계산")
+    st.caption("ATR, MFI, Stochastic 지표에서 가격 요인을 통제한 잔차와 PC1 통합 심리지수를 확인합니다.")
 
     raw_data = st.session_state.get("raw_data")
     if raw_data is None:
@@ -81,6 +82,6 @@ def run() -> None:
 
     col1, col2 = st.columns(2)
     with col1:
-        st.pyplot(plot_sentiment_index(df["Investor_Sentiment_PC1"]))
+        st.pyplot(plot_sentiment_index(df["Investor_Sentiment_PC1"], title="Investor Sentiment PC1"))
     with col2:
-        st.pyplot(plot_correlation_heatmap(df[RESIDUAL_COLUMNS + ["Investor_Sentiment_PC1"]]))
+        st.pyplot(plot_correlation_heatmap(df[RESIDUAL_COLUMNS + ["Investor_Sentiment_PC1"]], title="Proxy Feature Correlation"))

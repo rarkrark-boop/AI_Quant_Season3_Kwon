@@ -16,7 +16,8 @@ def _load_recent_data(asset_name: str) -> pd.DataFrame:
 
 
 def run() -> None:
-    st.header("데이터 전처리")
+    st.header("삼성전자 데이터 전처리")
+    st.caption("모델의 최종 target인 삼성전자 주봉 원천 데이터와 기술지표를 확인합니다.")
 
     asset_name = st.session_state.get("asset_name", "삼성전자")
     asset_key = safe_filename(asset_name)
@@ -45,4 +46,4 @@ def run() -> None:
     st.caption(f"CSV 저장 위치: {missing_path}")
 
     st.subheader("가격 추이")
-    st.pyplot(plot_price_history(df, title=f"{asset_name} 종가 추이"))
+    st.pyplot(plot_price_history(df, title="Samsung Electronics Close"))

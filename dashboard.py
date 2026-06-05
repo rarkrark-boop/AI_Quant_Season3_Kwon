@@ -15,19 +15,18 @@ st.set_page_config(
 
 def render_sidebar() -> None:
     st.sidebar.header("분석 설정")
-    st.sidebar.selectbox(
-        "분석 대상",
-        ["삼성전자", "코스피", "비트코인"],
-        key="asset_name",
-    )
-    st.sidebar.caption("각 탭은 위 설정과 세션 데이터를 공유합니다.")
+    st.session_state.asset_name = "삼성전자"
+    st.sidebar.metric("최종 예측 대상", "삼성전자")
+    st.sidebar.markdown("**외생 보조 입력**")
+    st.sidebar.write("코스피, 비트코인")
+    st.sidebar.caption("코스피와 비트코인은 모델 학습의 보조 입력으로만 사용합니다.")
 
 
 def main() -> None:
     render_sidebar()
 
-    st.title("투자자 심리지수 기반 주가 예측 대시보드")
-    st.caption("데이터 전처리 → 심리지표 계산 → 모델 구축 및 검증")
+    st.title("삼성전자 심리 Proxy 기반 방향성 예측 대시보드")
+    st.caption("삼성전자 주봉을 target으로 두고, 코스피와 비트코인은 외생 보조 입력으로 사용합니다.")
 
     overview_tab, data_tab, sentiment_tab, modeling_tab = st.tabs(
         ["프로젝트 소개", "데이터 전처리", "심리지표", "모델링/검증"]
