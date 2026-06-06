@@ -161,7 +161,7 @@ def _build_model_input_preview(current_data, model_choice: str) -> pd.DataFrame:
     선택한 Model A/B/C에 실제로 들어가는 feature만 추려서
     발표용 입력값 표로 구성한다.
 
-    숫자형 입력값은 소수점 7자리까지 표시한다.
+    숫자형 입력값은 소수점 4~5자리까지 표시한다.
     """
     current_series = pd.Series(current_data)
 
@@ -586,7 +586,7 @@ def run() -> None:
             "모델별 추가 입력",
             "비교 목적",
         ],
-        height=540,
+        height=600,
     )
 
         # ---------------------------------------------------------
@@ -651,7 +651,7 @@ def run() -> None:
                 "DA는 삼성전자 다음 주 실제 방향과 예측 방향이 일치한 비율입니다."
             ),
             left_align_cols=["모델"],
-            height=620,
+            height=700,
         )
 
         left, center, right = st.columns(
