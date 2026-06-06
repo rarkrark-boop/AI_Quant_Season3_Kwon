@@ -595,15 +595,15 @@ def run() -> None:
     add_vertical_space(48)
 
     st.subheader("동일 조건 백테스트 성능 비교")
-
+        # "아래 표와 그래프는 최신 train_pipeline.py에서 생성한 "
+        # "`data/output/model_backtest_summary.csv`를 사용합니다. "
     st.caption(
-        "아래 표와 그래프는 최신 train_pipeline.py에서 생성한 "
-        "`data/output/model_backtest_summary.csv`를 사용합니다. "
+
         "삼성전자를 단일 예측 대상으로 두고, KOSPI와 Bitcoin을 "
         "시장학습 보조자료로 정렬한 동일 조건 실험 결과입니다. "
         "저장된 최적화 pkl 모델의 공식 DA와는 구분하여 확인합니다."
     )
-
+       
     current_summary_path = Path(
         "data/output/model_backtest_summary.csv"
     )
@@ -669,7 +669,7 @@ def run() -> None:
         st.info(
             "참고: 저장된 최적화 pkl 모델의 공식 백테스트 DA는 "
             "Model A 52.94%, Model B 56.30%, Model C 55.46%입니다. "
-            "위 표의 수치는 최신 train_pipeline.py를 동일 조건으로 다시 실행하여 "
+            "위 표의 수치는 최신 훈련-프로세스의 동일 조건으로 다시 실행하여 "
             "생성한 비교 실험 결과이므로 두 결과를 동일한 값으로 합치지 않습니다."
         )
 
