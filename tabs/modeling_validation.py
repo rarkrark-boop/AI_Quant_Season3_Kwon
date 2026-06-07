@@ -3,75 +3,146 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 import matplotlib.pyplot as plt
-from modules.data_fetcher import get_recent_data
 from modules.predictor import QuantPredictor
-from visualization import plot_price_history, plot_sentiment_index,plot_correlation_heatmap, plot_directional_accuracy_bar,plot_actual_vs_prediction_series, plot_actual_vs_predicted_scatter
+from visualization import (
+    plot_actual_vs_predicted_scatter,
+    plot_actual_vs_prediction_series,
+    plot_directional_accuracy_bar,
+)
 from utils.table_utils import render_presentation_table     
 import streamlit.components.v1 as components
-import matplotlib.pyplot as plt
-import seaborn as sns
 import numpy as np
 import joblib
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+MODEL_DISPLAY_NAME_MAP = {
+    "Zero-return Baseline": "Zero-return Baseline",
+    "Train-mean Baseline": "Train-mean Baseline",
+    "Price-only Baseline": "Price-only",
+    "Model B-ATR (ATR 단일 심리지표)": "Model A-1 (ATR)",
+    "Model B-MFI (MFI 단일 심리지표)": "Model A-2 (MFI)",
+    "Model B-Stochastic (Stochastic 단일 심리지표)": (
+        "Model A-3 (Stochastic)"
+    ),
+    "Model A (PCA 통합)": "Model B (PC1)",
+    "Model B (세부 잔차)": "Model C (잔차 3개)",
+    "Model C (전체 혼용)": "Model D (PC1 + 잔차 3개)",
+}
+
+MODEL_DISPLAY_ORDER = [
+    "Zero-return Baseline",
+    "Train-mean Baseline",
+    "Price-only",
+    "Model A-1 (ATR)",
+    "Model A-2 (MFI)",
+    "Model A-3 (Stochastic)",
+    "Model B (PC1)",
+    "Model C (잔차 3개)",
+    "Model D (PC1 + 잔차 3개)",
+]
+
+BACKTEST_SUMMARY_PATH = (
+    PROJECT_ROOT / "model_backtest_summary.csv"
+)
+
+PERIOD_BACKTEST_PATH = (
+    PROJECT_ROOT / "model_period_backtest.csv"
+)
+
+PREDICTION_PATH = (
+    PROJECT_ROOT
+    / "data"
+    / "output"
+    / "model_predictions.csv"
+)
+
+OUTPUT_DIR = PROJECT_ROOT / "outputs"
+
+PREDICTION_WORKFLOW_IMAGE = (
+    OUTPUT_DIR / "model_predicts_workflow.png"
+)
+
+PREDICTOR_MODEL_TYPE_MAP = {
+    "B": "A",
+    "C": "B",
+    "D": "C",
+}
 
 MODEL_FILES = {
-    "Model A": Path("models/best_xgboost_panel_model_A.pkl"),
-    "Model B": Path("models/best_xgboost_panel_model_B.pkl"),
-    "Model C": Path("models/best_xgboost_panel_model_C.pkl"),
-    "Scaler": Path("models/scaler.pkl"),
-    "PCA": Path("models/pca.pkl"),
+    "Model B": (
+        PROJECT_ROOT
+        / "models"
+        / "best_xgboost_panel_model_A.pkl"
+    ),
+    "Model C": (
+        PROJECT_ROOT
+        / "models"
+        / "best_xgboost_panel_model_B.pkl"
+    ),
+    "Model D": (
+        PROJECT_ROOT
+        / "models"
+        / "best_xgboost_panel_model_C.pkl"
+    ),
+    "Scaler": (
+        PROJECT_ROOT
+        / "models"
+        / "scaler.pkl"
+    ),
+    "PCA": (
+        PROJECT_ROOT
+        / "models"
+        / "pca.pkl"
+    ),
 }
 
 BACKTEST_DA = {
-    "A": 52.94,
-    "B": 56.30,
-    "C": 55.46,
+    "B": 52.94,
+    "C": 56.30,
+    "D": 55.46,
 }
 
 
 MODEL_DESCRIPTIONS = {
-    "A": {
-        "name": "Model A",
+    "B": {
+        "name": "Model B",
         "label": "PC1 통합형",
         "features": (
-            "삼성전자·KOSPI·Bitcoin의 현재 주봉 종가와 "
-            "각 자산의 과거 1~5주 로그수익률 "
+            "공통 가격 feature 18개 "
             "+ Investor_Sentiment_PC1"
         ),
         "purpose": (
-            "공통 기본 학습자료에 PCA로 압축한 "
-            "단일 심리 proxy를 추가했을 때의 효과를 확인"
-        ),
-    },
-    "B": {
-        "name": "Model B",
-        "label": "Residual 개별형",
-        "features": (
-            "삼성전자·KOSPI·Bitcoin의 현재 주봉 종가와 "
-            "각 자산의 과거 1~5주 로그수익률 "
-            "+ ATR·MFI·Stochastic residual 3개"
-        ),
-        "purpose": (
-            "공통 기본 학습자료에 개별 residual 3개를 "
-            "직접 추가했을 때의 효과를 확인"
+            "ATR·MFI·Stochastic residual의 공통 성분을 "
+            "PC1 하나로 압축했을 때의 효과 확인"
         ),
     },
     "C": {
         "name": "Model C",
-        "label": "PC1 + Residual 결합형",
+        "label": "Residual 개별형",
         "features": (
-            "삼성전자·KOSPI·Bitcoin의 현재 주봉 종가와 "
-            "각 자산의 과거 1~5주 로그수익률 "
-            "+ Investor_Sentiment_PC1 + residual 3개"
+            "공통 가격 feature 18개 "
+            "+ ATR·MFI·Stochastic residual 3개"
         ),
         "purpose": (
-            "통합 심리 proxy와 개별 residual을 함께 추가했을 때의 "
-            "결합 효과를 확인"
+            "개별 심리 proxy 정보를 압축하지 않고 "
+            "각각 유지했을 때의 효과 확인"
+        ),
+    },
+    "D": {
+        "name": "Model D",
+        "label": "PC1 + Residual 결합형",
+        "features": (
+            "공통 가격 feature 18개 "
+            "+ PC1 + residual 3개"
+        ),
+        "purpose": (
+            "통합 심리 proxy와 개별 residual을 "
+            "함께 사용했을 때의 효과 확인"
         ),
     },
 }
-
 
 BASE_PRICE_FEATURES = [
     "Samsung_Close",
@@ -96,15 +167,69 @@ BASE_PRICE_FEATURES = [
 
 
 MODEL_FEATURES = {
-    "A": BASE_PRICE_FEATURES + [
+    "B": [
+        "Samsung_Close",
+        "Samsung_Log_Return_lag1",
+        "Samsung_Log_Return_lag2",
+        "Samsung_Log_Return_lag3",
+        "Samsung_Log_Return_lag4",
+        "Samsung_Log_Return_lag5",
+        "KOSPI_Close",
+        "KOSPI_Log_Return_lag1",
+        "KOSPI_Log_Return_lag2",
+        "KOSPI_Log_Return_lag3",
+        "KOSPI_Log_Return_lag4",
+        "KOSPI_Log_Return_lag5",
+        "Bitcoin_Close",
+        "Bitcoin_Log_Return_lag1",
+        "Bitcoin_Log_Return_lag2",
+        "Bitcoin_Log_Return_lag3",
+        "Bitcoin_Log_Return_lag4",
+        "Bitcoin_Log_Return_lag5",
         "Investor_Sentiment_PC1",
     ],
-    "B": BASE_PRICE_FEATURES + [
+    "C": [
+        "Samsung_Close",
+        "Samsung_Log_Return_lag1",
+        "Samsung_Log_Return_lag2",
+        "Samsung_Log_Return_lag3",
+        "Samsung_Log_Return_lag4",
+        "Samsung_Log_Return_lag5",
+        "KOSPI_Close",
+        "KOSPI_Log_Return_lag1",
+        "KOSPI_Log_Return_lag2",
+        "KOSPI_Log_Return_lag3",
+        "KOSPI_Log_Return_lag4",
+        "KOSPI_Log_Return_lag5",
+        "Bitcoin_Close",
+        "Bitcoin_Log_Return_lag1",
+        "Bitcoin_Log_Return_lag2",
+        "Bitcoin_Log_Return_lag3",
+        "Bitcoin_Log_Return_lag4",
+        "Bitcoin_Log_Return_lag5",
         "ATR_10_res",
         "MFI_10_res",
         "STOCHk_10_3_3_res",
     ],
-    "C": BASE_PRICE_FEATURES + [
+    "D": [
+        "Samsung_Close",
+        "Samsung_Log_Return_lag1",
+        "Samsung_Log_Return_lag2",
+        "Samsung_Log_Return_lag3",
+        "Samsung_Log_Return_lag4",
+        "Samsung_Log_Return_lag5",
+        "KOSPI_Close",
+        "KOSPI_Log_Return_lag1",
+        "KOSPI_Log_Return_lag2",
+        "KOSPI_Log_Return_lag3",
+        "KOSPI_Log_Return_lag4",
+        "KOSPI_Log_Return_lag5",
+        "Bitcoin_Close",
+        "Bitcoin_Log_Return_lag1",
+        "Bitcoin_Log_Return_lag2",
+        "Bitcoin_Log_Return_lag3",
+        "Bitcoin_Log_Return_lag4",
+        "Bitcoin_Log_Return_lag5",
         "Investor_Sentiment_PC1",
         "ATR_10_res",
         "MFI_10_res",
@@ -112,29 +237,31 @@ MODEL_FEATURES = {
     ],
 }
 
-#### export 
-OUTPUT_DIR = Path("outputs")
-PREDICTION_WORKFLOW_IMAGE = OUTPUT_DIR / "model_predicts_workflow.png"
+# 기존 model_predictions.csv 내부 열 이름과 화면 표시명 매핑
 MODEL_PREDICTION_COLUMNS = {
     "Price-only Baseline": {
         "pred_col": "Price_Only_Pred_Log_Return",
         "label": "Price-only",
         "match_col": "Price_Only_Match",
+        "display_name": "Price-only",
     },
     "Model A": {
         "pred_col": "Model_A_Pred_Log_Return",
-        "label": "Model A",
+        "label": "Model B (PC1)",
         "match_col": "Model_A_Match",
+        "display_name": "Model B (PC1)",
     },
     "Model B": {
         "pred_col": "Model_B_Pred_Log_Return",
-        "label": "Model B",
+        "label": "Model C (잔차 3개)",
         "match_col": "Model_B_Match",
+        "display_name": "Model C (잔차 3개)",
     },
     "Model C": {
         "pred_col": "Model_C_Pred_Log_Return",
-        "label": "Model C",
+        "label": "Model D (PC1 + 잔차 3개)",
         "match_col": "Model_C_Match",
+        "display_name": "Model D (PC1 + 잔차 3개)",
     },
 }
 
@@ -153,21 +280,12 @@ def validate_model_files() -> list[str]:
     return [label for label, path in MODEL_FILES.items() if not path.exists()]
 
 
-def load_input_data(asset_name: str):
-    cached = st.session_state.get("raw_data")
-    if cached is not None:
-        return cached
-
-    df = get_recent_data(asset_name)
-    st.session_state.raw_data = df
-    return df
-
 def _build_model_input_preview(current_data, model_choice: str) -> pd.DataFrame:
     """
-    선택한 Model A/B/C에 실제로 들어가는 feature만 추려서
+    선택한 저장 모델 B/C/D에 실제로 들어가는 feature만 추려서
     발표용 입력값 표로 구성한다.
 
-    숫자형 입력값은 소수점 7자리까지 표시한다.
+    숫자형 입력값은 소수점 4자리까지 표시한다.
     """
     current_series = pd.Series(current_data)
 
@@ -232,34 +350,53 @@ def _build_prediction_date_summary(df_plot: pd.DataFrame) -> pd.DataFrame:
 
     return summary_df
 
-def _plot_next_week_log_return_forecast(df_plot: pd.DataFrame, pred_log_return: float, asset_name: str, model_label: str):
-    """
-    최근 실제 로그수익률 흐름과 다음 주 예측 로그수익률을 함께 보여준다.
-    result에 backtest 예측 시계열이 없으므로, 현재는 다음 주 단일 예측값을 강조한다.
-    """
-    plot_df = df_plot.copy()
+def _plot_next_week_log_return_forecast(
+    df_plot: pd.DataFrame,
+    pred_log_return: float,
+    asset_name: str,
+    model_label: str,
+):
+    """최근 실제 주봉 로그수익률과 다음 주 단일 예측값을 표시한다."""
+    plot_df = df_plot.copy().sort_index()
 
-    if "Log_Return" not in plot_df.columns:
-        plot_df["Log_Return"] = 0.0
+    if "Log_Return" in plot_df.columns:
+        plot_df["Actual_Log_Return"] = pd.to_numeric(
+            plot_df["Log_Return"], errors="coerce"
+        )
+    elif "Samsung_Log_Return" in plot_df.columns:
+        plot_df["Actual_Log_Return"] = pd.to_numeric(
+            plot_df["Samsung_Log_Return"], errors="coerce"
+        )
+    elif "Samsung_Close" in plot_df.columns:
+        samsung_close = pd.to_numeric(
+            plot_df["Samsung_Close"], errors="coerce"
+        )
+        plot_df["Actual_Log_Return"] = np.log(
+            samsung_close / samsung_close.shift(1)
+        )
+    else:
+        plot_df["Actual_Log_Return"] = np.nan
 
-    plot_df = plot_df.tail(52).copy()
+    plot_df = plot_df.dropna(subset=["Actual_Log_Return"]).tail(52)
+
+    if plot_df.empty:
+        return None
 
     last_date = plot_df.index.max()
-    if hasattr(last_date, "to_pydatetime"):
-        next_date = last_date + pd.Timedelta(days=7)
-    else:
-        next_date = len(plot_df)
+    next_date = (
+        last_date + pd.Timedelta(days=7)
+        if hasattr(last_date, "to_pydatetime")
+        else len(plot_df)
+    )
 
     fig, ax = plt.subplots(figsize=(10, 4.8))
-
     ax.plot(
         plot_df.index,
-        plot_df["Log_Return"],
+        plot_df["Actual_Log_Return"],
         marker="o",
         linewidth=1.8,
         label="최근 실제 주봉 로그수익률",
     )
-
     ax.scatter(
         [next_date],
         [pred_log_return],
@@ -268,14 +405,12 @@ def _plot_next_week_log_return_forecast(df_plot: pd.DataFrame, pred_log_return: 
         label="다음 주 예측 로그수익률",
         zorder=5,
     )
-
     ax.axhline(0, linewidth=1)
     ax.set_title(f"{asset_name} · {model_label} 다음 주 로그수익률 예측")
     ax.set_xlabel("주봉 기준일")
     ax.set_ylabel("로그수익률")
     ax.legend()
     fig.tight_layout()
-
     return fig
 
 
@@ -656,6 +791,68 @@ def _style_direction_match_table(df: pd.DataFrame):
     return styler
 
 #############
+def _build_live_official_sentiment_table(
+    result: dict,
+) -> pd.DataFrame | None:
+    """
+    실시간 계산값과 보성님 공식 CSV의 최신값을 나란히 표시한다.
+    두 값은 서로를 대체하지 않으며, 기준일도 함께 표출한다.
+    """
+    live_info = result.get(
+        "live_sentiment_latest"
+    )
+    official_info = result.get(
+        "official_sentiment_latest"
+    )
+
+    if not live_info or not official_info:
+        return None
+
+    live_values = live_info.get(
+        "values",
+        {}
+    )
+    official_values = official_info.get(
+        "values",
+        {}
+    )
+
+    feature_labels = {
+        "ATR_10_res": "ATR residual",
+        "MFI_10_res": "MFI residual",
+        "STOCHk_10_3_3_res": "Stochastic residual",
+        "Investor_Sentiment_PC1": "Investor Sentiment PC1",
+    }
+
+    rows = []
+
+    for feature_name, display_name in feature_labels.items():
+        if (
+            feature_name not in live_values
+            or feature_name not in official_values
+        ):
+            continue
+
+        rows.append(
+            {
+                "항목": display_name,
+                "실시간 계산값": f"{live_values[feature_name]:.6f}",
+                "실시간 기준일": pd.Timestamp(
+                    live_info["date"]
+                ).strftime("%Y-%m-%d"),
+                "보성님 CSV 값": f"{official_values[feature_name]:.6f}",
+                "CSV 기준일": pd.Timestamp(
+                    official_info["date"]
+                ).strftime("%Y-%m-%d"),
+            }
+        )
+
+    if not rows:
+        return None
+
+    return pd.DataFrame(rows)
+
+
 def add_vertical_space(px: int = 48) -> None:
     st.markdown(
         f"<div style='height: {px}px;'></div>",
@@ -666,225 +863,211 @@ def add_vertical_space(px: int = 48) -> None:
 
 def run() -> None:
     st.header("모델 구축 및 검증")
-   
 
     st.info(
         "최종 예측 대상은 삼성전자입니다. "
         "삼성전자·KOSPI·Bitcoin의 현재 주봉 종가와 "
-        "각 자산의 과거 1~5주 로그수익률을 공통 기본 학습자료로 사용합니다. "
-        "KOSPI와 Bitcoin은 시장학습 보조자료이며, "
-        "대시보드의 최근 예측 결과는 삼성전자 기준으로만 표시합니다."
+        "각 자산의 과거 1~5주 로그수익률을 공통 가격 feature로 사용합니다. "
+        "KOSPI와 Bitcoin은 시장 흐름을 반영하는 외생 보조 입력자료입니다."
     )
 
-    
-
     st.caption(
-        "심리 proxy를 넣지 않은 기준선과 Model A/B/C의 입력 구성을 비교합니다."
+        "Price-only 기준모델, 개별 residual 단독 모델 A-1~A-3, "
+        "그리고 PC1·residual 구성에 따른 Model B/C/D를 비교합니다."
+    )
+
+    common_price_input = (
+        "삼성전자·KOSPI·Bitcoin 현재 주봉 종가\n"
+        "+ 각 자산의 과거 1~5주 로그수익률"
     )
 
     comparison_df = pd.DataFrame(
         [
             {
-                "모델": "· Price-only",
-                "공통 기본 입력": (
-                    "삼성전자·KOSPI·Bitcoin 현재 주봉 종가\n"
-                    "+ 각 자산의 과거 1~5주 로그수익률"
-                ),
-                "심리 proxy": "사용하지 않음",
-                "모델별 추가 입력": "없음",
-                "비교 목적": "심리 proxy가 없는 가격 기반 기준선",
+                "모델": "Price-only",
+                "공통 가격 입력": common_price_input,
+                "심리 proxy 구성": "사용하지 않음",
+                "추가 feature": "없음",
+                "총 feature 수": 18,
+                "비교 목적": "심리 proxy가 없는 가격 기준모델",
             },
             {
-                "모델": "· Model A",
-                "공통 기본 입력": (
-                    "삼성전자·KOSPI·Bitcoin 현재 주봉 종가\n"
-                    "+ 각 자산의 과거 1~5주 로그수익률"
-                ),
-                "심리 proxy": "PC1 통합형",
-                "모델별 추가 입력": "Investor_Sentiment_PC1",
-                "비교 목적": "통합 심리 proxy의 추가 효과 확인",
+                "모델": "Model A-1 (ATR)",
+                "공통 가격 입력": common_price_input,
+                "심리 proxy 구성": "개별 residual 단독형",
+                "추가 feature": "ATR_10_res",
+                "총 feature 수": 19,
+                "비교 목적": "ATR residual의 단독 예측효과 확인",
             },
             {
-                "모델": "· Model B",
-                "공통 기본 입력": (
-                    "삼성전자·KOSPI·Bitcoin 현재 주봉 종가\n"
-                    "+ 각 자산의 과거 1~5주 로그수익률"
-                ),
-                "심리 proxy": "Residual 개별형",
-                "모델별 추가 입력": (
-                    "ATR_10_res\n"
-                    "MFI_10_res\n"
-                    "STOCHk_10_3_3_res"
-                ),
-                "비교 목적": "개별 심리 proxy 3개의 추가 효과 확인",
+                "모델": "Model A-2 (MFI)",
+                "공통 가격 입력": common_price_input,
+                "심리 proxy 구성": "개별 residual 단독형",
+                "추가 feature": "MFI_10_res",
+                "총 feature 수": 19,
+                "비교 목적": "MFI residual의 단독 예측효과 확인",
             },
             {
-                "모델": "· Model C",
-                "공통 기본 입력": (
-                    "삼성전자·KOSPI·Bitcoin 현재 주봉 종가\n"
-                    "+ 각 자산의 과거 1~5주 로그수익률"
+                "모델": "Model A-3 (Stochastic)",
+                "공통 가격 입력": common_price_input,
+                "심리 proxy 구성": "개별 residual 단독형",
+                "추가 feature": "STOCHk_10_3_3_res",
+                "총 feature 수": 19,
+                "비교 목적": "Stochastic residual의 단독 예측효과 확인",
+            },
+            {
+                "모델": "Model B (PC1)",
+                "공통 가격 입력": common_price_input,
+                "심리 proxy 구성": "PC1 통합형",
+                "추가 feature": "Investor_Sentiment_PC1",
+                "총 feature 수": 19,
+                "비교 목적": "residual 3개의 공통 성분을 압축한 효과 확인",
+            },
+            {
+                "모델": "Model C (잔차 3개)",
+                "공통 가격 입력": common_price_input,
+                "심리 proxy 구성": "Residual 개별형",
+                "추가 feature": (
+                    "ATR_10_res\nMFI_10_res\nSTOCHk_10_3_3_res"
                 ),
-                "심리 proxy": "PC1 + Residual 결합형",
-                "모델별 추가 입력": (
+                "총 feature 수": 21,
+                "비교 목적": "개별 residual 정보를 모두 유지한 효과 확인",
+            },
+            {
+                "모델": "Model D (PC1 + 잔차 3개)",
+                "공통 가격 입력": common_price_input,
+                "심리 proxy 구성": "PC1 + Residual 결합형",
+                "추가 feature": (
                     "Investor_Sentiment_PC1\n"
-                    "+ residual 3개"
+                    "+ ATR_10_res\n+ MFI_10_res\n+ STOCHk_10_3_3_res"
                 ),
-                "비교 목적": "통합·개별 심리 proxy 결합 효과 확인",
+                "총 feature 수": 22,
+                "비교 목적": "통합형과 개별형을 함께 사용한 효과 확인",
             },
         ]
     )
-
-
 
     render_presentation_table(
         comparison_df,
         title="모델별 입력 구조",
         footnote=(
-            "모든 모델은 삼성전자·KOSPI·Bitcoin의 현재 주봉 종가와 "
-            "각 자산의 과거 1~5주 로그수익률을 공통 기본 입력으로 사용합니다. "
-            "삼성전자는 최종 예측 대상이며, KOSPI와 Bitcoin은 삼성전자 주봉 기준일에 "
-            "맞춰 정렬되는 시장학습 보조자료입니다. "
-            "Model A/B/C는 심리 proxy의 구성만 달리하여 다음 주 삼성전자 "
-            "로그수익률 방향 예측 성능을 비교합니다."
+            "모든 모델은 현재 주봉 종가 3개와 과거 1~5주 로그수익률 "
+            "15개를 합친 공통 가격 feature 18개를 사용합니다. "
+            "Model A-1~A-3은 개별 residual의 단독 효과를 확인하는 "
+            "추가 진단모델입니다."
         ),
         left_align_cols=[
-            "공통 기본 입력",
-            "심리 proxy",
-            "모델별 추가 입력",
+            "모델",
+            "공통 가격 입력",
+            "심리 proxy 구성",
+            "추가 feature",
             "비교 목적",
         ],
-        height=650,
+        height=1000,
     )
 
-        # ---------------------------------------------------------
-    # 현재 동일 조건 백테스트 결과 시각화
-    # ---------------------------------------------------------
+    # 동일 조건 백테스트 성능 비교
     add_vertical_space(48)
-
     st.subheader("동일 조건 백테스트 성능 비교")
-
     st.caption(
-        "아래 표와 그래프는 최신 train_pipeline.py에서 생성한 "
-        "`data/output/model_backtest_summary.csv`를 사용합니다. "
-        "삼성전자를 단일 예측 대상으로 두고, KOSPI와 Bitcoin을 "
-        "시장학습 보조자료로 정렬한 동일 조건 실험 결과입니다. "
-        "저장된 최적화 pkl 모델의 공식 DA와는 구분하여 확인합니다."
+        "프로젝트 루트의 `model_backtest_summary.csv`를 사용합니다. "
+        "모든 결과는 동일한 58주 테스트 구간에서 계산됐습니다."
     )
 
-    current_summary_path = Path(
-        "data/output/model_backtest_summary.csv"
-    )
-
-    if current_summary_path.exists():
-        performance_df = pd.read_csv(current_summary_path)
-
-        core_model_order = [
-            "Naive Persistence Baseline",
-            "Price-only Baseline",
-            "Model A (PCA 통합)",
-            "Model B (세부 잔차)",
-            "Model C (전체 혼용)",
-        ]
-
-        performance_df = performance_df[
-            performance_df["Model"].isin(core_model_order)
-        ].copy()
-
-        performance_df["Model"] = pd.Categorical(
+    if BACKTEST_SUMMARY_PATH.exists():
+        performance_df = pd.read_csv(BACKTEST_SUMMARY_PATH)
+        performance_df["Model"] = performance_df["Model"].replace(
+            MODEL_DISPLAY_NAME_MAP
+        )
+        performance_df["Model_Order"] = pd.Categorical(
             performance_df["Model"],
-            categories=core_model_order,
+            categories=MODEL_DISPLAY_ORDER,
             ordered=True,
         )
-
         performance_df = (
-            performance_df
-            .sort_values("Model")
+            performance_df.sort_values("Model_Order")
+            .drop(columns=["Model_Order"])
             .reset_index(drop=True)
         )
 
-        performance_display_df = _format_performance_table(
-            performance_df
-        )
-
+        performance_display_df = _format_performance_table(performance_df)
         render_presentation_table(
             performance_display_df,
-            title="Naive·Price-only·Model A/B/C 성능 비교",
+            title="기준선 및 Model A-1~D 성능 비교",
             footnote=(
-                "Naive Persistence는 이번 주 삼성전자 로그수익률의 방향을 "
-                "다음 주에도 유지한다고 가정한 단순 기준선입니다. "
-                "Price-only와 Model A/B/C는 삼성전자·KOSPI·Bitcoin의 "
-                "현재 주봉 종가와 각 자산의 과거 1~5주 로그수익률을 "
-                "공통 기본 학습자료로 사용합니다. "
-                "DA는 삼성전자 다음 주 실제 방향과 예측 방향이 일치한 비율입니다."
+                "Zero-return·Train-mean은 단순 비교 기준선입니다. "
+                "Price-only와 Model A-1~D는 실제 실험모델입니다. "
+                "DA는 다음 주 실제 방향과 예측 방향이 일치한 비율입니다."
             ),
             left_align_cols=["모델"],
-            height=620,
+            height=920,
         )
 
-        left, center, right = st.columns(
-            [0.15, 0.70, 0.15]
-        )
-
+        left, center, right = st.columns([0.08, 0.84, 0.08])
         with center:
             st.pyplot(
-                plot_directional_accuracy_bar(
-                    performance_df
-                ),
+                plot_directional_accuracy_bar(performance_df),
                 use_container_width=True,
             )
 
         st.info(
-            "참고: 저장된 최적화 pkl 모델의 공식 백테스트 DA는 "
-            "Model A 52.94%, Model B 56.30%, Model C 55.46%입니다. "
-            "위 표의 수치는 최신 train_pipeline.py를 동일 조건으로 다시 실행하여 "
-            "생성한 비교 실험 결과이므로 두 결과를 동일한 값으로 합치지 않습니다."
-        )
-
-    else:
-        st.info(
-            "`data/output/model_backtest_summary.csv`가 없어 "
-            "동일 조건 백테스트 성능표를 표시하지 못했습니다."
-        )
-
-    # ---------------------------------------------------------
-    # 삼성전자 단일 타깃 방향성 적중 시각화
-    # ---------------------------------------------------------
-    prediction_path = Path(
-        "data/output/model_predictions.csv"
-    )
-
-    if prediction_path.exists():
-        prediction_df = pd.read_csv(
-            prediction_path
+            "Model A-1(ATR)과 Model A-2(MFI)는 각각 36/58로 "
+            "DA 62.0690%를 기록했습니다. Price-only와 Model A-3·B·C·D는 "
+            "각각 35/58로 DA 60.3448%였습니다. 한 건 차이는 약 1.7241%p입니다."
         )
     else:
-        prediction_df = None
+        st.error(f"성능 CSV를 찾지 못했습니다: {BACKTEST_SUMMARY_PATH}")
 
-    if prediction_df is not None:
-        samsung_prediction_df = prediction_df.copy()
+    # 기간별 백테스트
+    if PERIOD_BACKTEST_PATH.exists():
+        with st.expander("기간별 방향 정확도 보기", expanded=False):
+            period_df = pd.read_csv(PERIOD_BACKTEST_PATH)
+            period_df["Model"] = period_df["Model"].replace(
+                MODEL_DISPLAY_NAME_MAP
+            )
+            period_df["Model_Order"] = pd.Categorical(
+                period_df["Model"],
+                categories=MODEL_DISPLAY_ORDER,
+                ordered=True,
+            )
+            period_df = (
+                period_df.sort_values(["Period", "Model_Order"])
+                .drop(columns=["Model_Order"])
+                .reset_index(drop=True)
+            )
+            period_display_df = period_df.copy()
+            for col in ["DA", "Up_DA", "Down_DA", "Pred_Up_Ratio"]:
+                if col in period_display_df.columns:
+                    period_display_df[col] = pd.to_numeric(
+                        period_display_df[col], errors="coerce"
+                    ).map(
+                        lambda value: "-" if pd.isna(value) else f"{value:.4f}%"
+                    )
+            render_presentation_table(
+                period_display_df,
+                title="기간별 모델 방향 정확도",
+                footnote=(
+                    "전체 DA가 같더라도 기간별 적중 양상과 상승·하락 예측 성향은 "
+                    "다를 수 있습니다."
+                ),
+                left_align_cols=["Period", "Model"],
+                height=1200,
+            )
 
-        # 과거 CSV가 여러 자산을 포함한 경우에도
-        # 삼성전자 행만 남겨 단일 타깃 원칙을 유지한다.
-        if "Asset" in samsung_prediction_df.columns:
-            samsung_prediction_df = samsung_prediction_df[
-                samsung_prediction_df["Asset"] == "삼성전자"
+    # 과거 테스트 구간 실제값·예측값 연결
+    if PREDICTION_PATH.exists():
+        prediction_df = pd.read_csv(PREDICTION_PATH)
+        if "Asset" in prediction_df.columns:
+            prediction_df = prediction_df[
+                prediction_df["Asset"] == "삼성전자"
             ].copy()
 
-        if samsung_prediction_df.empty:
-            st.warning(
-                "`data/output/model_predictions.csv`에 "
-                "삼성전자 예측 행이 없어 적중 시각화를 표시하지 못했습니다."
-            )
-        else:
-            add_vertical_space(74)
-
+        if not prediction_df.empty:
+            add_vertical_space(64)
             st.subheader("삼성전자 테스트 구간 방향성 적중 확인")
-
             st.caption(
-                "아래 표는 삼성전자 테스트 구간의 실제 로그수익률 방향과 "
-                "예측 방향이 일치했는지를 보여줍니다. "
-                "KOSPI와 Bitcoin은 시장학습 보조자료이며, "
-                "이 화면의 예측 타깃에는 포함하지 않습니다."
+                "이 영역은 기존 `model_predictions.csv`의 실제 열 이름을 유지하면서, "
+                "화면에서는 새 모델명 B/C/D로 표시합니다."
             )
 
             _render_prediction_workflow_image_card(
@@ -893,73 +1076,51 @@ def run() -> None:
 
             selected_plot_model = st.radio(
                 "시각화할 예측 모델",
-                options=[
-                    "Price-only Baseline",
-                    "Model A",
-                    "Model B",
-                    "Model C",
-                ],
+                options=list(MODEL_PREDICTION_COLUMNS),
                 index=2,
                 horizontal=True,
                 key="csv_visual_model",
+                format_func=lambda key: MODEL_PREDICTION_COLUMNS[key][
+                    "display_name"
+                ],
             )
+            model_info = MODEL_PREDICTION_COLUMNS[selected_plot_model]
 
-            model_info = MODEL_PREDICTION_COLUMNS[
-                selected_plot_model
-            ]
-
-            direction_preview_df = (
-                _build_direction_match_preview(
-                    samsung_prediction_df,
-                    asset_name="삼성전자",
-                    selected_model_name=selected_plot_model,
-                    rows=20,
-                )
+            direction_preview_df = _build_direction_match_preview(
+                prediction_df,
+                asset_name="삼성전자",
+                selected_model_name=selected_plot_model,
+                rows=20,
             )
-
             render_presentation_table(
                 direction_preview_df,
                 title="삼성전자 최근 방향성 적중표",
                 footnote=(
                     "실제 로그수익률과 예측 로그수익률의 부호가 일치하면 "
-                    "적중으로 표시합니다. 이 표는 Directional Accuracy의 "
-                    "계산 방식을 직관적으로 설명하기 위한 보조 자료입니다."
+                    "적중으로 표시합니다."
                 ),
-                left_align_cols=[
-                    "기준일",
-                    "실제 방향",
-                    "예측 방향",
-                ],
+                left_align_cols=["기준일", "실제 방향", "예측 방향"],
                 cell_style_rules={
                     "결과": {
                         "적중": (
                             "background-color:#eaf7ea !important; "
-                            "color:#166534; "
-                            "font-weight:800;"
+                            "color:#166534; font-weight:800;"
                         ),
                         "실패": (
                             "background-color:#fdecec !important; "
-                            "color:#991b1b; "
-                            "font-weight:800;"
+                            "color:#991b1b; font-weight:800;"
                         ),
                     }
                 },
+                height=900,
             )
 
             with st.expander(
-                "보조자료: 실제값 vs 예측값 시계열 보기",
-                expanded=False,
+                "실제값 vs 예측값 시계열 보기", expanded=False
             ):
-                st.caption(
-                    "삼성전자 테스트 구간의 실제 로그수익률과 "
-                    "예측 로그수익률 흐름을 비교합니다. "
-                    "수익률 시계열의 노이즈가 크므로 발표에서는 "
-                    "보조자료로 사용합니다."
-                )
-
                 st.pyplot(
                     plot_actual_vs_prediction_series(
-                        samsung_prediction_df,
+                        prediction_df,
                         asset_name="삼성전자",
                         model_col=model_info["pred_col"],
                         model_label=model_info["label"],
@@ -968,265 +1129,214 @@ def run() -> None:
                 )
 
             with st.expander(
-                "보조자료: 실제값-예측값 산점도 보기",
-                expanded=False,
+                "실제값-예측값 산점도 보기", expanded=False
             ):
-                st.caption(
-                    "삼성전자 실제 로그수익률과 예측 로그수익률의 "
-                    "분포 및 편향을 확인하기 위한 보조자료입니다."
-                )
-
                 st.pyplot(
                     plot_actual_vs_predicted_scatter(
-                        samsung_prediction_df,
+                        prediction_df,
                         asset_name="삼성전자",
                         model_col=model_info["pred_col"],
                         model_label=model_info["label"],
                     ),
                     use_container_width=True,
                 )
-
+        else:
+            st.warning("예측 CSV에 삼성전자 행이 없습니다.")
     else:
-        st.info(
-            "`data/output/model_predictions.csv`가 없어 "
-            "삼성전자 방향성 적중표와 보조 시각화를 표시하지 못했습니다."
-        )
+        st.info(f"예측 시계열 CSV를 찾지 못했습니다: {PREDICTION_PATH}")
 
-    # ---------------------------------------------------------
-    # 저장 모델 파일 확인 및 최근 1회 예측
-    # ---------------------------------------------------------
-
+    # 저장 모델 B/C/D 중요도와 최근 예측
     missing = validate_model_files()
     if missing:
         st.error(f"필요한 모델 파일이 없습니다: {', '.join(missing)}")
-        st.info("먼저 모델 학습 스크립트를 실행해 `models/` 폴더에 pkl 파일을 생성하세요.")
         return
 
-    add_vertical_space(48)
+    add_vertical_space(56)
+    st.subheader("저장 모델 중요도 및 최근 1회 예측")
 
     model_choice = st.radio(
         "사용할 저장 모델",
-        options=["A", "B", "C"],
+        options=["B", "C", "D"],
         horizontal=True,
         format_func=lambda value: {
-            "A": "Model A (PCA 심리지수)",
-            "B": "Model B (잔차 3개)",
-            "C": "Model C (PCA + 잔차)",
+            "B": "Model B (PC1 통합형)",
+            "C": "Model C (잔차 3개)",
+            "D": "Model D (PC1 + 잔차 3개)",
         }[value],
+        key="saved_model_choice",
     )
 
     selected_info = MODEL_DESCRIPTIONS[model_choice]
-
-    st.markdown(f"### {selected_info['name']} · {selected_info['label']}")
-
+    st.markdown(
+        f"### {selected_info['name']} · {selected_info['label']}"
+    )
     feature_col, purpose_col = st.columns(2)
-
     with feature_col:
-        st.info(
-            f"**사용 feature**\n\n"
-            f"{selected_info['features']}"
-        )
-
+        st.info(f"**사용 feature**\n\n{selected_info['features']}")
     with purpose_col:
-        st.info(
-            f"**비교 목적**\n\n"
-            f"{selected_info['purpose']}"
-        )
+        st.info(f"**비교 목적**\n\n{selected_info['purpose']}")
 
-    with purpose_col:
-        st.info(
-            f"**비교 목적**\n\n"
-            f"{selected_info['purpose']}"
-        )
+    importance_df = _build_feature_importance_df(model_choice)
+    group_summary_df = _build_feature_group_summary(importance_df)
+    importance_display_df = _format_feature_importance_table(importance_df)
 
-            
-    # 선택 모델 Feature Importance
-   
-    importance_df = _build_feature_importance_df(
-        model_choice
-    )
-
-    group_summary_df = _build_feature_group_summary(
-        importance_df
-    )
-
-    importance_display_df = (
-        _format_feature_importance_table(
-            importance_df
-        )
-    )
-
-    add_vertical_space(32)
-
-    st.subheader(
-        f"Model {model_choice} 입력 feature 중요도"
-    )
-
+    add_vertical_space(24)
+    st.subheader(f"Model {model_choice} 입력 feature 중요도")
     st.caption(
-        "아래 중요도는 XGBoost 트리 분할 과정에서 "
-        "각 feature가 오차 감소에 기여한 상대적 비중입니다. "
-        "예측값 자체를 단순 비율로 분해한 값은 아닙니다."
+        "gain 기반 중요도는 XGBoost 트리 분할에서 각 feature가 오차 감소에 "
+        "기여한 상대적 비중입니다. 예측값 자체를 분해한 비율은 아닙니다."
     )
-
     render_presentation_table(
         group_summary_df,
         title="입력 그룹별 상대 중요도",
         footnote=(
-            "삼성전자 가격 입력, KOSPI·Bitcoin 보조 입력, "
-            "심리 proxy feature의 gain 기반 중요도를 "
-            "그룹별로 합산한 결과입니다."
+            "삼성전자 가격 입력, KOSPI·Bitcoin 보조 입력, 심리 proxy의 "
+            "gain 기반 중요도를 그룹별로 합산했습니다."
         ),
         left_align_cols=["입력 그룹"],
-        height=360,
+        height=380,
     )
 
-    with st.expander(
-        "개별 feature 중요도 상세 보기",
-        expanded=False,
-    ):
+    with st.expander("개별 feature 중요도 상세 보기", expanded=False):
         render_presentation_table(
             importance_display_df,
             title=f"Model {model_choice} 개별 feature 중요도",
             footnote=(
-                "중요도가 0인 feature는 현재 학습된 "
-                "XGBoost 트리 분할에 사용되지 않은 변수입니다."
+                "중요도가 0인 feature는 현재 저장된 XGBoost 트리 분할에 "
+                "사용되지 않은 변수입니다."
             ),
-            left_align_cols=[
-                "Feature",
-                "입력 구분",
-                "모델 사용 여부",
-            ],
+            left_align_cols=["Feature", "입력 구분", "모델 사용 여부"],
             height=1180,
         )
 
     st.caption(
-        "모델 선택을 변경한 뒤에는 아래의 '저장된 모델로 예측 실행' 버튼을 다시 눌러야 "
-        "선택 모델 기준의 예측 결과가 화면에 반영됩니다."
+        "모델 선택을 변경한 뒤에는 예측 실행 버튼을 다시 눌러야 "
+        "선택 모델의 결과가 반영됩니다."
     )
-
-
-
-    # 최종 예측 출력 대상은 삼성전자로 고정한다.
-    asset_name = "삼성전자"
 
     if st.button("저장된 모델로 예측 실행", type="primary"):
         with st.spinner(
-            f"{asset_name} 최근 시장 데이터를 준비하고 "
-            f"Model {model_choice}로 예측하는 중입니다."
+            f"삼성전자 최근 시장 데이터를 준비하고 Model {model_choice}로 "
+            "예측하는 중입니다."
         ):
             predictor = load_predictor()
-
+            internal_model_type = PREDICTOR_MODEL_TYPE_MAP[model_choice]
             st.session_state.prediction_result = predictor.get_prediction(
-                model_type=model_choice,
+                model_type=internal_model_type
             )
-
             st.session_state.prediction_model_choice = model_choice
 
+    stored_model = st.session_state.get("prediction_model_choice")
+    if stored_model not in MODEL_DESCRIPTIONS:
+        st.session_state.pop("prediction_result", None)
+        st.session_state.pop("prediction_model_choice", None)
+
     result = st.session_state.get("prediction_result")
-    selected_model = st.session_state.get("prediction_model_choice", model_choice)
+    selected_model = st.session_state.get(
+        "prediction_model_choice", model_choice
+    )
     if result is None:
         st.info("저장된 모델로 예측 실행 버튼을 누르세요.")
         return
 
     result_info = MODEL_DESCRIPTIONS[selected_model]
-
     direction_label = "상승" if result["direction"] == "UP" else "하락"
     direction_delta = result["pred_log_return"] * 100
 
     col1, col2, col3 = st.columns(3)
-
-    col1.metric(
-        "사용 모델",
-        f"Model {selected_model}",
-    )
-
+    col1.metric("사용 모델", f"Model {selected_model}")
     col2.metric(
         "저장 모델 공식 DA",
         f"{BACKTEST_DA[selected_model]:.2f}%",
     )
-
     col3.metric(
         "다음 주 예측 방향",
         direction_label,
         delta=f"{direction_delta:.2f}%",
     )
 
-    st.caption(
-        "저장 모델 공식 DA는 보성님이 최적화하여 저장한 pkl 모델의 "
-        "공식 백테스트 결과입니다. "
-        "위의 동일 조건 재실험 CSV에서 계산된 DA와는 실험 시점과 조건이 다르므로 "
-        "별도의 결과로 구분하여 표시합니다."
-    )
-
-    st.subheader("최근 예측 입력값")
-    st.caption(
-        f"아래 표는 {result_info['name']}에 실제로 입력되는 feature만 추려 정리한 것입니다. "
-        "모델 선택을 바꾸면 표시되는 입력 feature도 함께 달라집니다."
-    )
-    expected_feature_count = result.get(
-        "expected_feature_count"
-    )
-
-    actual_feature_count = len(
-        result["current_data"]
-    )
-
+    expected_feature_count = result.get("expected_feature_count")
+    actual_feature_count = len(result["current_data"])
     st.success(
-        f"Model {selected_model} 입력 확인: "
-        f"{actual_feature_count}개 feature"
+        f"Model {selected_model} 입력 확인: {actual_feature_count}개 feature"
     )
-
-    if expected_feature_count != actual_feature_count:
+    if (
+        expected_feature_count is not None
+        and expected_feature_count != actual_feature_count
+    ):
         st.error(
-            "저장 모델이 요구하는 feature 수와 "
-            "실제 입력 feature 수가 일치하지 않습니다."
+            "저장 모델이 요구하는 feature 수와 실제 입력 feature 수가 "
+            "일치하지 않습니다."
         )
         return
 
-
-
-
+    st.subheader("최근 예측 입력값")
     input_preview_df = _build_model_input_preview(
-        result["current_data"],
-        selected_model,
+        result["current_data"], selected_model
     )
-
     render_presentation_table(
         input_preview_df,
         title=f"{result_info['name']} 예측 입력값",
         footnote=(
-            "저장된 pkl 모델의 feature 구성에 맞춰 최근 주봉 기준 입력값을 표시합니다."
+            "저장된 pkl 모델의 feature 구성에 맞춘 최근 주봉 기준 입력값입니다."
         ),
         left_align_cols=["입력 feature"],
+        height=980,
     )
 
+    sentiment_compare_df = (
+        _build_live_official_sentiment_table(
+            result
+        )
+    )
+
+    if sentiment_compare_df is not None:
+        st.subheader(
+            "실시간 계산값과 보성님 CSV 값 함께 보기"
+        )
+
+        st.caption(
+            "왼쪽은 현재 대시보드가 최근 데이터를 이용해 다시 계산한 값이고, "
+            "오른쪽은 보성님이 전달한 삼성전자_sentiment_features.csv의 "
+            "최종값입니다. 두 값을 서로 대체하지 않고 기준일과 함께 표시합니다."
+        )
+
+        render_presentation_table(
+            sentiment_compare_df,
+            title="심리 proxy 최신값 비교 표출",
+            footnote=(
+                "값이 다르면 데이터 수집 시점, 기술지표 계산 구간, "
+                "잔차 회귀 범위 또는 PCA 기준의 차이일 수 있습니다. "
+                "이 표를 그대로 보성님께 확인 자료로 사용할 수 있습니다."
+            ),
+            left_align_cols=["항목"],
+        )
+    else:
+        st.info(
+            "실시간 계산값 또는 보성님 CSV 값을 불러오지 못해 "
+            "두 값을 함께 표시하지 못했습니다."
+        )
+
     df_plot = result["df_plot"]
-
     date_summary_df = _build_prediction_date_summary(df_plot)
-
     render_presentation_table(
         date_summary_df,
         title="예측 기준일 요약",
         footnote=(
-            "오늘의 실행 일자와 모델 입력에 사용된 최근 주봉 기준일, "
-            "그리고 다음 주 로그수익률 예측 대상 시점을 함께 표시합니다."
+            "실행일, 최근 입력 주봉 기준일, 다음 주 예측 대상 시점을 "
+            "구분해 표시합니다."
         ),
         left_align_cols=["구분", "의미"],
-   
+        height=420,
     )
 
-    st.subheader("다음 주 예측 결과 요약")
-
     pred_log_return = result["pred_log_return"]
-    pred_return_pct = pred_log_return * 100
-    direction_text = direction_label
-
     prediction_summary_df = pd.DataFrame(
         [
             {
                 "항목": "예측 대상",
-                "값": f"{asset_name} 다음 주 주봉 로그수익률",
-                "해석": "저장된 XGBoost 모델이 예측한 다음 주 수익률 방향입니다.",
+                "값": "삼성전자 다음 주 주봉 로그수익률",
+                "해석": "저장된 XGBoost 모델의 최근 1회 예측 대상입니다.",
             },
             {
                 "항목": "예측 로그수익률",
@@ -1235,13 +1345,13 @@ def run() -> None:
             },
             {
                 "항목": "예측 수익률(%)",
-                "값": f"{pred_return_pct:.5f}%",
-                "해석": "로그수익률 예측값을 백분율로 환산한 참고값입니다.",
+                "값": f"{pred_log_return * 100:.5f}%",
+                "해석": "로그수익률을 백분율로 환산한 참고값입니다.",
             },
             {
                 "항목": "예측 방향",
-                "값": direction_text,
-                "해석": "예측 로그수익률이 0보다 크면 상승, 0보다 작으면 하락으로 해석합니다.",
+                "값": direction_label,
+                "해석": "0보다 크면 상승, 0보다 작으면 하락으로 해석합니다.",
             },
             {
                 "항목": "사용 모델",
@@ -1250,14 +1360,23 @@ def run() -> None:
             },
         ]
     )
-
     render_presentation_table(
         prediction_summary_df,
         title="다음 주 예측 결과 요약",
         footnote=(
-            "현재 화면은 저장된 pkl 모델이 산출한 최근 1회 예측 결과를 요약합니다. "
-            "전체 테스트 구간의 방향성 적중표와 실제값-예측값 보조 시각화는 위의 CSV 기반 백테스트 영역에서 확인할 수 있습니다."
+            "저장된 pkl 모델이 산출한 최근 1회 예측을 요약합니다."
         ),
         left_align_cols=["항목", "해석"],
         height=520,
     )
+
+    forecast_fig = _plot_next_week_log_return_forecast(
+        df_plot=df_plot,
+        pred_log_return=pred_log_return,
+        asset_name="삼성전자",
+        model_label=f"Model {selected_model}",
+    )
+    if forecast_fig is not None:
+        st.subheader("최근 실제 로그수익률과 다음 주 예측값")
+        st.pyplot(forecast_fig, use_container_width=True)
+

@@ -10,6 +10,9 @@ from modules.data_fetcher import get_recent_data
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MODEL_DIR = PROJECT_ROOT / "models"
+OFFICIAL_SENTIMENT_PATH = (
+    PROJECT_ROOT / "삼성전자_sentiment_features.csv"
+)
 
 TARGET_INDICATORS = [
     "ATR_10",
@@ -30,13 +33,16 @@ N_LAGS = 5
 class QuantPredictor:
     def __init__(self):
         self.model_A = joblib.load(
-            MODEL_DIR / "best_xgboost_panel_model_A.pkl"
+            MODEL_DIR
+            / "best_xgboost_panel_model_A.pkl"
         )
         self.model_B = joblib.load(
-            MODEL_DIR / "best_xgboost_panel_model_B.pkl"
+            MODEL_DIR
+            / "best_xgboost_panel_model_B.pkl"
         )
         self.model_C = joblib.load(
-            MODEL_DIR / "best_xgboost_panel_model_C.pkl"
+            MODEL_DIR
+            / "best_xgboost_panel_model_C.pkl"
         )
         self.scaler = joblib.load(
             MODEL_DIR / "scaler.pkl"
@@ -50,12 +56,15 @@ class QuantPredictor:
         df: pd.DataFrame,
     ) -> pd.DataFrame:
         """
-        삼성전자 주봉 데이터에서 RET·MOM·VOL을 계산하고,
+        삼성전자 주봉 데이터에서 RET·MOM·VOL을 계산하고
         ATR·MFI·Stochastic residual을 생성한다.
         """
         result = df.sort_index().copy()
 
-        result["RET"] = result["Close"].pct_change()
+        result["RET"] = (
+            result["Close"]
+            .pct_change()
+        )
 
         result["MOM"] = (
             result["RET"]
@@ -77,7 +86,10 @@ class QuantPredictor:
         ]
 
         clean = result.dropna(
-            subset=control_features + TARGET_INDICATORS
+            subset=(
+                control_features
+                + TARGET_INDICATORS
+            )
         ).copy()
 
         if clean.empty:
@@ -86,7 +98,9 @@ class QuantPredictor:
                 "더 긴 기간의 주봉 데이터가 필요합니다."
             )
 
-        controls = clean[control_features]
+        controls = clean[
+            control_features
+        ]
 
         for indicator in TARGET_INDICATORS:
             model = LinearRegression()
@@ -96,7 +110,9 @@ class QuantPredictor:
                 clean[indicator],
             )
 
-            clean[f"{indicator}_res"] = (
+            clean[
+                f"{indicator}_res"
+            ] = (
                 clean[indicator]
                 - model.predict(controls)
             )
@@ -107,6 +123,12 @@ class QuantPredictor:
         self,
         model_type: str,
     ):
+        """
+        내부 저장 모델 타입 A/B/C를 선택한다.
+
+        대시보드 화면에서는 B/C/D로 표시하지만
+        기존 pkl 파일과의 연결을 위해 내부 타입은 A/B/C를 유지한다.
+        """
         if model_type == "A":
             return self.model_A
 
@@ -117,7 +139,7 @@ class QuantPredictor:
             return self.model_C
 
         raise ValueError(
-            f"지원하지 않는 모델 타입입니다: {model_type}"
+            f"지원하지 않는 내부 모델 타입입니다: {model_type}"
         )
 
     def _add_return_lags(
@@ -130,12 +152,16 @@ class QuantPredictor:
         """
         result = df.sort_index().copy()
 
-        result[f"{prefix}_Log_Return"] = np.log(
+        result[
+            f"{prefix}_Log_Return"
+        ] = np.log(
             result["Close"]
             / result["Close"].shift(1)
         )
 
-        result[f"{prefix}_Close"] = result["Close"]
+        result[
+            f"{prefix}_Close"
+        ] = result["Close"]
 
         for lag in range(
             1,
@@ -156,7 +182,7 @@ class QuantPredictor:
         prefix: str,
     ) -> pd.DataFrame:
         """
-        KOSPI·Bitcoin의 주봉 feature를 삼성전자 기준일에 맞춘다.
+        KOSPI·Bitcoin 주봉 feature를 삼성전자 기준일에 맞춘다.
         """
         market_features = [
             f"{prefix}_Close",
@@ -168,8 +194,10 @@ class QuantPredictor:
             )
         ]
 
-        aligned = (
-            market_df[market_features]
+        return (
+            market_df[
+                market_features
+            ]
             .sort_index()
             .reindex(
                 target_df.index,
@@ -177,7 +205,44 @@ class QuantPredictor:
             )
         )
 
-        return aligned
+    def _load_official_sentiment_latest(
+        self,
+    ) -> dict | None:
+        """
+        보성님 최종 CSV의 마지막 행을 외부 표출용 참고값으로 불러온다.
+
+        이 값은 실시간 예측 입력을 대체하지 않는다.
+        """
+        if not OFFICIAL_SENTIMENT_PATH.exists():
+            return None
+
+        official_df = pd.read_csv(
+            OFFICIAL_SENTIMENT_PATH,
+            parse_dates=["Date"],
+        )
+
+        if official_df.empty:
+            return None
+
+        official_df = (
+            official_df
+            .sort_values("Date")
+            .reset_index(drop=True)
+        )
+
+        latest = official_df.iloc[-1]
+
+        return {
+            "date": latest["Date"],
+            "values": {
+                col: float(latest[col])
+                for col in (
+                    RESIDUAL_COLS
+                    + [SENTIMENT_COL]
+                )
+                if col in latest.index
+            },
+        }
 
     def _build_live_feature_frame(
         self,
@@ -189,52 +254,59 @@ class QuantPredictor:
         samsung_raw = get_recent_data(
             "삼성전자"
         )
-
         kospi_raw = get_recent_data(
             "코스피"
         )
-
         bitcoin_raw = get_recent_data(
             "비트코인"
         )
 
-        # -----------------------------------------------------
-        # 삼성전자 residual 및 PC1
-        # -----------------------------------------------------
-        samsung = self._extract_residuals(
-            samsung_raw
+        samsung = (
+            self._extract_residuals(
+                samsung_raw
+            )
         )
 
-        scaled_residuals = self.scaler.transform(
-            samsung[RESIDUAL_COLS]
+        scaled_residuals = (
+            self.scaler.transform(
+                samsung[RESIDUAL_COLS]
+            )
         )
 
-        sentiment_score = self.pca.transform(
-            scaled_residuals
+        sentiment_score = (
+            self.pca.transform(
+                scaled_residuals
+            )
         )
 
-        mfi_index = RESIDUAL_COLS.index(
-            "MFI_10_res"
+        mfi_index = (
+            RESIDUAL_COLS.index(
+                "MFI_10_res"
+            )
         )
 
-        if self.pca.components_[0][mfi_index] < 0:
-            sentiment_score = -sentiment_score
+        if (
+            self.pca.components_[0][
+                mfi_index
+            ]
+            < 0
+        ):
+            sentiment_score = (
+                -sentiment_score
+            )
 
-        samsung[SENTIMENT_COL] = sentiment_score
+        samsung[
+            SENTIMENT_COL
+        ] = sentiment_score
 
-        # -----------------------------------------------------
-        # 세 자산 공통 가격 feature
-        # -----------------------------------------------------
         samsung = self._add_return_lags(
             samsung,
             "Samsung",
         )
-
         kospi = self._add_return_lags(
             kospi_raw,
             "KOSPI",
         )
-
         bitcoin = self._add_return_lags(
             bitcoin_raw,
             "Bitcoin",
@@ -285,7 +357,8 @@ class QuantPredictor:
         model_type: str = "B",
     ) -> dict:
         """
-        선택한 Model A/B/C로 삼성전자 다음 주 로그수익률을 예측한다.
+        내부 저장 모델 A/B/C 중 하나로
+        삼성전자 다음 주 로그수익률을 예측한다.
         """
         feature_frame = (
             self._build_live_feature_frame()
@@ -318,7 +391,9 @@ class QuantPredictor:
             )
 
         prediction_input = (
-            current_data[expected_cols]
+            current_data[
+                expected_cols
+            ]
             .copy()
         )
 
@@ -334,6 +409,22 @@ class QuantPredictor:
             else "DOWN"
         )
 
+        official_sentiment_latest = (
+            self._load_official_sentiment_latest()
+        )
+
+        live_sentiment_latest = {
+            "date": feature_frame.index.max(),
+            "values": {
+                col: float(feature_frame.iloc[-1][col])
+                for col in (
+                    RESIDUAL_COLS
+                    + [SENTIMENT_COL]
+                )
+                if col in feature_frame.columns
+            },
+        }
+
         return {
             "pred_log_return": pred_log_return,
             "direction": direction,
@@ -345,5 +436,14 @@ class QuantPredictor:
             ),
             "expected_feature_count": len(
                 expected_cols
+            ),
+            "latest_feature_date": (
+                feature_frame.index.max()
+            ),
+            "live_sentiment_latest": (
+                live_sentiment_latest
+            ),
+            "official_sentiment_latest": (
+                official_sentiment_latest
             ),
         }

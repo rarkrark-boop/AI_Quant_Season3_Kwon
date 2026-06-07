@@ -33,10 +33,8 @@ def initialize_session_state() -> None:
     """
     대시보드 전체에서 공유하는 기본 session_state를 설정한다.
 
-    asset_name은 데이터 전처리와 심리지표 화면에서
-    불러오고 확인할 주봉 데이터의 자산명이다.
-
-    최종 예측 대상은 삼성전자로 고정한다.
+    데이터 전처리 탭에서는 삼성전자·코스피·비트코인을 선택할 수 있고,
+    심리지표 및 모델링/검증 탭의 분석 대상은 삼성전자로 고정한다.
     """
     if "asset_name" not in st.session_state:
         st.session_state.asset_name = PREDICTION_TARGET
@@ -58,33 +56,46 @@ def initialize_session_state() -> None:
 # =========================================================
 def render_default_sidebar() -> None:
     """
-    프로젝트 소개·데이터 전처리·심리지표 탭에서 사용하는
-    기존 자산 선택 사이드바입니다.
+    프로젝트 소개 및 데이터 전처리 탭에서 사용하는
+    자산 선택 사이드바입니다.
     """
     st.sidebar.header("주봉 데이터 준비")
 
     asset_name = st.sidebar.selectbox(
         "불러올 주봉 데이터",
-        options=[
-            "삼성전자",
-            "코스피",
-            "비트코인",
-        ],
+        options=DATA_ASSETS,
         key="sidebar_asset_name",
     )
 
     st.session_state.asset_name = asset_name
 
     st.sidebar.caption(
-        "선택한 자산의 주봉 데이터와 기술지표 계산 결과를 확인합니다."
+        "선택한 자산의 주봉 데이터와 "
+        "기술지표 계산 결과를 확인합니다."
+    )
+
+
+def render_sentiment_sidebar() -> None:
+    """
+    심리지표 탭에서 사용하는 삼성전자 고정 사이드바입니다.
+    """
+    st.session_state.asset_name = PREDICTION_TARGET
+
+    st.sidebar.header("주봉 데이터 준비")
+    st.sidebar.markdown("**분석 대상**")
+    st.sidebar.markdown("### 삼성전자")
+
+    st.sidebar.caption(
+        "심리지표 탭에서는 삼성전자 주봉 데이터를 기준으로 "
+        "ATR·MFI·Stochastic residual과 PC1을 확인합니다."
     )
 
 
 def render_modeling_sidebar() -> None:
     """
-    모델링/검증 탭에서만 사용하는 고정 안내 사이드바입니다.
+    모델링/검증 탭에서 사용하는 고정 안내 사이드바입니다.
     """
-    st.session_state.asset_name = "삼성전자"
+    st.session_state.asset_name = PREDICTION_TARGET
 
     st.sidebar.header("분석 대상")
 
@@ -99,6 +110,7 @@ def render_modeling_sidebar() -> None:
         "KOSPI와 Bitcoin은 시장 흐름을 반영하는 "
         "보조 입력자료로 사용합니다."
     )
+
 
 # =========================================================
 # 대시보드 상단
@@ -126,50 +138,73 @@ def render_dashboard_header() -> None:
 # =========================================================
 def render_experiment_summary() -> None:
     """
-    프로젝트 소개 탭에서 모델의 연구 질문 3가지에 대한 간략 설명.
+    프로젝트 소개 탭에서 전체 실험 구조를 요약한다.
 
     자세한 성능 결과와 해석은 모델링/검증 탭에서 표시한다.
     """
-    st.subheader("실험 구성")
+    st.subheader("분석 도구 및 실험 구성")
 
     st.markdown(
         """
-        **공통 기본 학습데이터**  
-        삼성전자·KOSPI·Bitcoin의 현재 주봉 종가와 과거 1~5주 수익률
+        **공통 가격 feature 18개**  
+        삼성전자·KOSPI·Bitcoin의 현재 주봉 종가 3개와  
+        각 자산의 과거 1~5주 로그수익률 15개
         """
     )
 
     st.markdown(
         """
-        **0번 · Price-only**  
-        공통 기본 학습데이터만 사용한 가격 기반 비교 모델
+        **Price-only**  
+        공통 가격 feature만 사용하는 기준모델
         """
     )
 
     st.markdown(
         """
-        **1번 · Model A**  
-        공통 기본 학습데이터에 PC1 투자심리 지수를 추가
+        **Model A-1 · ATR 단독형**  
+        공통 가격 feature에 ATR residual만 추가
         """
     )
 
     st.markdown(
         """
-        **2번 · Model B**  
-        공통 기본 학습데이터에 ATR·MFI·Stochastic Residual 3개를 추가
+        **Model A-2 · MFI 단독형**  
+        공통 가격 feature에 MFI residual만 추가
         """
     )
 
     st.markdown(
         """
-        **3번 · Model C**  
-        공통 기본 학습데이터에 PC1과 Residual 3개를 함께 추가
+        **Model A-3 · Stochastic 단독형**  
+        공통 가격 feature에 Stochastic residual만 추가
+        """
+    )
+
+    st.markdown(
+        """
+        **Model B · PC1 통합형**  
+        공통 가격 feature에 residual 3개의 공통 성분인 PC1을 추가
+        """
+    )
+
+    st.markdown(
+        """
+        **Model C · Residual 개별형**  
+        공통 가격 feature에 ATR·MFI·Stochastic residual 3개를 추가
+        """
+    )
+
+    st.markdown(
+        """
+        **Model D · 결합형**  
+        공통 가격 feature에 PC1과 residual 3개를 함께 추가
         """
     )
 
     st.caption(
-        "모든 모델은 삼성전자 다음 주 로그수익률의 상승·하락 방향을 예측하며, "
-        "Directional Accuracy를 중심으로 비교합니다."
+        "Model A-1~A-3은 개별 심리 proxy의 단독 효과를 확인하기 위한 "
+        "추가 진단실험입니다. 모든 모델은 삼성전자 다음 주 로그수익률의 "
+        "상승·하락 방향을 예측하며 Directional Accuracy를 중심으로 비교합니다."
     )
 
 
@@ -191,13 +226,17 @@ def main() -> None:
         on_change="rerun",
     )
 
+    # 현재 열린 탭에 맞춰 사이드바를 한 번만 렌더링한다.
+    if modeling_tab.open:
+        render_modeling_sidebar()
+    elif sentiment_tab.open:
+        render_sentiment_sidebar()
+    else:
+        render_default_sidebar()
+
     # -----------------------------------------------------
     # 프로젝트 소개
     # -----------------------------------------------------
-    if modeling_tab.open:
-        render_modeling_sidebar()
-    else:
-        render_default_sidebar()
     with overview_tab:
         render_introduction()
 
